@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from sanger_designer.defaults import (
-    DEFAULT_COVERAGE_REPORT_PATH,
+    DEFAULT_DEPTH_REPORT_PATH,
     DEFAULT_DELIMITER_NAME,
     DEFAULT_MASK_TEXT,
     DEFAULT_MAX_ITERATIONS,
@@ -16,14 +16,14 @@ from sanger_designer.defaults import (
     DEFAULT_PRIMER_LIST_NAME,
     DEFAULT_PRIMER_LIST_PATH,
     DEFAULT_PRIMER_NAME_PREFIX,
-    DEFAULT_TARGET_COVERAGE,
+    DEFAULT_TARGET_DEPTH,
     DEFAULT_USE_DEFAULT_PRIMER_LIST,
     DELIMITER_OPTIONS,
     MASK_TEXT_PLACEHOLDER,
     MAX_ITERATIONS_INPUT_MAX,
     MAX_ITERATIONS_INPUT_MIN,
     MAX_ITERATIONS_INPUT_STEP,
-    TARGET_COVERAGE_OPTIONS,
+    TARGET_DEPTH_OPTIONS,
 )
 from sanger_designer.core import (
     DEFAULT_DESIGN_SETTINGS,
@@ -79,10 +79,10 @@ def render_sidebar() -> dict:
         )
 
         st.header("Options")
-        coverage = st.segmented_control(
-            "Target coverage",
-            options=list(TARGET_COVERAGE_OPTIONS),
-            default=DEFAULT_TARGET_COVERAGE,
+        depth = st.segmented_control(
+            "Target depth",
+            options=list(TARGET_DEPTH_OPTIONS),
+            default=DEFAULT_TARGET_DEPTH,
         )
         mask_text = st.text_input(
             "Mask regions",
@@ -119,7 +119,7 @@ def render_sidebar() -> dict:
         "sequence_file": sequence_file,
         "primer_files": primer_files,
         "use_default_primers": use_default_primers,
-        "coverage": int(coverage),
+        "depth": int(depth),
         "mask_text": mask_text,
         "prefix": prefix,
         "delimiter": delimiter_from_name(delimiter_name),
@@ -261,7 +261,7 @@ def run_design(params: dict) -> None:
             result = design_primers(
                 sequence,
                 existing_primers,
-                target_coverage=params["coverage"],
+                target_depth=params["depth"],
                 masks=masks,
                 max_iterations=params["max_iterations"],
                 primer_name_prefix=params["prefix"],
@@ -278,7 +278,7 @@ def run_design(params: dict) -> None:
     st.session_state["settings"] = params["settings"]
     st.session_state["runtime_seconds"] = time.perf_counter() - start
     st.session_state["run_parameters"] = {
-        "coverage": params["coverage"],
+        "depth": params["depth"],
         "mask_text": params["mask_text"],
         "prefix": params["prefix"],
         "delimiter": params["delimiter"],
@@ -301,15 +301,15 @@ def render_result(result: DesignResult, sequence_length: int, masks, delimiter: 
     settings = st.session_state.get("settings", DEFAULT_DESIGN_SETTINGS)
     render_summary(result)
 
-    overview_tab, coverage_tab, placement_tab, primers_tab, report_tab = st.tabs(
-        ["Overview", "Coverage", "Placement", "Primers", "Report"]
+    overview_tab, depth_tab, placement_tab, primers_tab, report_tab = st.tabs(
+        ["Overview", "Depth", "Placement", "Primers", "Report"]
     )
     with overview_tab:
         render_missing_regions(result)
         render_downloads(result, delimiter, settings)
-    with coverage_tab:
-        st.plotly_chart(build_coverage_figure(result, sequence_length, masks), use_container_width=True)
-        st.dataframe(coverage_distribution(result), hide_index=True, use_container_width=True)
+    with depth_tab:
+        st.plotly_chart(build_depth_figure(result, sequence_length, masks), use_container_width=True)
+        st.dataframe(depth_distribution(result), hide_index=True, use_container_width=True)
     with placement_tab:
         show_read_ranges = st.checkbox("Show cover bars", value=True)
         st.plotly_chart(
@@ -332,16 +332,16 @@ def render_summary(result: DesignResult) -> None:
     cols[1].metric("Total primers", len(result.primers))
     cols[2].metric("Existing", existing_count)
     cols[3].metric("Designed", designed_count)
-    cols[4].metric("Min coverage", f"{result.min_coverage} / {result.target_coverage}")
+    cols[4].metric("Min depth", f"{result.min_depth} / {result.target_depth}")
     st.caption(f"Runtime: {runtime:.1f} seconds")
 
 
 def render_missing_regions(result: DesignResult) -> None:
     if result.achieved:
-        st.success("Coverage target achieved.")
+        st.success("Depth target achieved.")
         return
 
-    st.warning("Coverage target was not achieved.")
+    st.warning("Depth target was not achieved.")
     st.write(", ".join(format_interval(region) for region in result.missing_regions))
 
 
@@ -354,9 +354,9 @@ def render_downloads(result: DesignResult, delimiter: str, settings: DesignSetti
         mime="text/plain",
     )
     st.download_button(
-        "Download coverage report (.txt)",
-        data=coverage_report_text(result, settings=settings),
-        file_name=DEFAULT_COVERAGE_REPORT_PATH,
+        "Download depth report (.txt)",
+        data=depth_report_text(result, settings=settings),
+        file_name=DEFAULT_DEPTH_REPORT_PATH,
         mime="text/plain",
     )
     st.warning(SENSITIVE_BUNDLE_NOTICE)
@@ -382,20 +382,20 @@ def render_downloads(result: DesignResult, delimiter: str, settings: DesignSetti
     )
 
 
-def build_coverage_figure(result: DesignResult, sequence_length: int, masks) -> go.Figure:
+def build_depth_figure(result: DesignResult, sequence_length: int, masks) -> go.Figure:
     positions = list(range(1, sequence_length + 1))
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=positions,
-            y=list(result.coverage),
+            y=list(result.depth),
             mode="lines",
-            name="Coverage",
+            name="Depth",
             line=dict(color="#2563eb", width=2),
         )
     )
     fig.add_hline(
-        y=result.target_coverage,
+        y=result.target_depth,
         line_dash="dash",
         line_color="#16a34a",
         annotation_text="Target",
@@ -408,7 +408,7 @@ def build_coverage_figure(result: DesignResult, sequence_length: int, masks) -> 
         height=430,
         margin=dict(l=20, r=20, t=20, b=20),
         xaxis_title="Position",
-        yaxis_title="Coverage",
+        yaxis_title="Depth",
         hovermode="x unified",
     )
     return fig
@@ -563,10 +563,10 @@ def primer_color(source: str) -> str:
     return "#2563eb" if source == "existing" else "#dc2626"
 
 
-def coverage_distribution(result: DesignResult) -> pd.DataFrame:
-    counts = Counter(result.coverage)
+def depth_distribution(result: DesignResult) -> pd.DataFrame:
+    counts = Counter(result.depth)
     return pd.DataFrame(
-        [{"Coverage": coverage, "Bases": bases} for coverage, bases in sorted(counts.items())]
+        [{"Depth": depth, "Bases": bases} for depth, bases in sorted(counts.items())]
     )
 
 
@@ -594,18 +594,18 @@ def primer_rows(primers: tuple[Primer, ...]) -> list[dict]:
 
 
 def render_report(result: DesignResult, sequence_length: int, settings: DesignSettings) -> None:
-    st.code(coverage_report_text(result, sequence_length, settings), language="text")
+    st.code(depth_report_text(result, sequence_length, settings), language="text")
 
 
-def coverage_report_text(
+def depth_report_text(
     result: DesignResult,
     sequence_length: int | None = None,
     settings: DesignSettings | None = None,
 ) -> str:
     lines = [
         f"Status: {'achieved' if result.achieved else 'incomplete'}",
-        f"Target coverage: {result.target_coverage}",
-        f"Minimum coverage: {result.min_coverage}",
+        f"Target depth: {result.target_depth}",
+        f"Minimum depth: {result.min_depth}",
         f"Total primers: {len(result.primers)}",
         f"Existing primers: {sum(1 for primer in result.primers if primer.source == 'existing')}",
         f"Designed primers: {sum(1 for primer in result.primers if primer.source == 'designed')}",
@@ -627,11 +627,12 @@ def coverage_report_text(
         )
     if result.missing_regions:
         lines.append("Missing regions: " + ", ".join(format_interval(region) for region in result.missing_regions))
-    lines.append("Coverage distribution:")
-    for row in coverage_distribution(result).to_dict("records"):
-        lines.append(f"  {row['Coverage']}: {row['Bases']} bp")
+    lines.append("Depth distribution:")
+    for row in depth_distribution(result).to_dict("records"):
+        lines.append(f"  {row['Depth']}: {row['Bases']} bp")
     return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
     main()
+

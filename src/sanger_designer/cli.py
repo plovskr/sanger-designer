@@ -13,10 +13,10 @@ from .defaults import (
     DEFAULT_PRIMER_LIST_NAME,
     DEFAULT_PRIMER_LIST_PATH,
     DEFAULT_PRIMER_NAME_PREFIX,
-    DEFAULT_TARGET_COVERAGE,
+    DEFAULT_TARGET_DEPTH,
     DELIMITER_OPTIONS,
     MASK_TEXT_PLACEHOLDER,
-    TARGET_COVERAGE_OPTIONS,
+    TARGET_DEPTH_OPTIONS,
 )
 from .core import (
     DesignResult,
@@ -35,7 +35,7 @@ from .core import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sanger-designer",
-        description="Design Sanger sequencing primers for circular plasmid coverage.",
+        description="Design Sanger sequencing primers for circular plasmid depth.",
     )
     parser.add_argument("sequence", help="Input FASTA or GenBank file.")
     parser.add_argument(
@@ -62,11 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-c",
-        "--coverage",
+        "--depth",
         type=int,
-        choices=TARGET_COVERAGE_OPTIONS,
-        default=DEFAULT_TARGET_COVERAGE,
-        help=f"Target coverage. Default: {DEFAULT_TARGET_COVERAGE}",
+        choices=TARGET_DEPTH_OPTIONS,
+        default=DEFAULT_TARGET_DEPTH,
+        help=f"Target depth. Default: {DEFAULT_TARGET_DEPTH}",
     )
     parser.add_argument(
         "-m",
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         result = design_primers(
             sequence,
             existing,
-            target_coverage=args.coverage,
+            target_depth=args.depth,
             masks=masks,
             max_iterations=args.max_iterations,
             primer_name_prefix=args.prefix,
@@ -152,13 +152,14 @@ def print_summary(result: DesignResult, output: str) -> None:
     designed_count = sum(1 for primer in result.primers if primer.source == "designed")
     print(f"Output: {output}")
     print(f"Primers: {len(result.primers)} total ({existing_count} existing, {designed_count} designed)")
-    print(f"Minimum coverage: {result.min_coverage} / target {result.target_coverage}")
+    print(f"Minimum depth: {result.min_depth} / target {result.target_depth}")
     if result.achieved:
-        print("Coverage target achieved.")
+        print("Depth target achieved.")
     else:
         regions = ", ".join(format_interval(region) for region in result.missing_regions)
-        print(f"Coverage target not achieved. Missing regions: {regions}")
+        print(f"Depth target not achieved. Missing regions: {regions}")
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -10,7 +10,7 @@ from typing import Iterable, Sequence
 from .defaults import (
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_PRIMER_NAME_PREFIX,
-    DEFAULT_TARGET_COVERAGE,
+    DEFAULT_TARGET_DEPTH,
     DESIGN_BEAM_WIDTH,
     DESIGN_DIVERSE_POSITION_GAP,
     DESIGN_OPTIONS_PER_REGION,
@@ -28,7 +28,7 @@ from .defaults import (
     PREFERRED_PAIR_MAX,
     PREFERRED_PAIR_MIN,
     READ_LENGTH,
-    TARGET_COVERAGE_OPTIONS,
+    TARGET_DEPTH_OPTIONS,
 )
 
 DNA_RE = re.compile(r"^[ACGT]+$", re.IGNORECASE)
@@ -116,14 +116,14 @@ class Primer:
 @dataclass(frozen=True)
 class DesignResult:
     primers: tuple[Primer, ...]
-    coverage: tuple[int, ...]
-    target_coverage: int
+    depth: tuple[int, ...]
+    target_depth: int
     missing_regions: tuple[Interval, ...]
     achieved: bool
 
     @property
-    def min_coverage(self) -> int:
-        return min(self.coverage) if self.coverage else 0
+    def min_depth(self) -> int:
+        return min(self.depth) if self.depth else 0
 
 
 class Primer3UnavailableError(RuntimeError):
@@ -134,15 +134,15 @@ def design_primers(
     sequence: str,
     existing_primers: Sequence[PrimerInput],
     *,
-    target_coverage: int = DEFAULT_TARGET_COVERAGE,
+    target_depth: int = DEFAULT_TARGET_DEPTH,
     masks: Sequence[Interval] = (),
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     primer_name_prefix: str = DEFAULT_PRIMER_NAME_PREFIX,
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> DesignResult:
-    if target_coverage not in TARGET_COVERAGE_OPTIONS:
-        allowed = ", ".join(str(value) for value in TARGET_COVERAGE_OPTIONS)
-        raise ValueError(f"target_coverage must be one of {allowed}")
+    if target_depth not in TARGET_DEPTH_OPTIONS:
+        allowed = ", ".join(str(value) for value in TARGET_DEPTH_OPTIONS)
+        raise ValueError(f"target_depth must be one of {allowed}")
     settings.validate()
 
     seq = normalize_sequence(sequence)
@@ -152,27 +152,27 @@ def design_primers(
 
     normalized_masks = tuple(normalize_interval(mask, n) for mask in masks)
     name_prefix = normalize_primer_name_prefix(primer_name_prefix)
-    selected = select_existing_primers(seq, existing_primers, target_coverage, normalized_masks, settings)
-    coverage = compute_coverage(n, selected)
+    selected = select_existing_primers(seq, existing_primers, target_depth, normalized_masks, settings)
+    depth = compute_depth(n, selected)
 
-    if min(coverage) < target_coverage:
+    if min(depth) < target_depth:
         selected = design_missing_primers_beam(
             seq,
             selected,
-            target_coverage,
+            target_depth,
             normalized_masks,
             max_iterations=max_iterations,
             primer_name_prefix=name_prefix,
             settings=settings,
         )
 
-    selected = optimize_primers(seq, selected, target_coverage)
-    coverage = compute_coverage(n, selected)
-    missing = coverage_regions_below(coverage, target_coverage)
+    selected = optimize_primers(seq, selected, target_depth)
+    depth = compute_depth(n, selected)
+    missing = depth_regions_below(depth, target_depth)
     return DesignResult(
         primers=tuple(selected),
-        coverage=tuple(coverage),
-        target_coverage=target_coverage,
+        depth=tuple(depth),
+        target_depth=target_depth,
         missing_regions=tuple(missing),
         achieved=not missing,
     )
@@ -188,7 +188,7 @@ def normalize_primer_name_prefix(prefix: str) -> str:
 def design_missing_primers_beam(
     sequence: str,
     initial_primers: Sequence[Primer],
-    target_coverage: int,
+    target_depth: int,
     masks: Sequence[Interval],
     *,
     max_iterations: int,
@@ -198,22 +198,22 @@ def design_missing_primers_beam(
 ) -> list[Primer]:
     sequence_length = len(sequence)
     initial = tuple(initial_primers)
-    if min(compute_coverage(sequence_length, initial)) >= target_coverage:
+    if min(compute_depth(sequence_length, initial)) >= target_depth:
         return list(initial)
 
     states: dict[tuple[tuple[str, str, int], ...], tuple[Primer, ...]] = {state_key(initial): initial}
     best_state = initial
-    best_score = design_state_score(sequence_length, initial, target_coverage)
+    best_score = design_state_score(sequence_length, initial, target_depth)
 
     for _ in range(max_iterations):
         candidates: dict[tuple[tuple[str, str, int], ...], tuple[Primer, ...]] = {}
         for state in states.values():
-            coverage = compute_coverage(sequence_length, state)
+            depth = compute_depth(sequence_length, state)
             for option in generate_design_options(
                 sequence,
                 state,
-                coverage,
-                target_coverage,
+                depth,
+                target_depth,
                 masks,
                 primer_name_prefix,
                 settings,
@@ -229,16 +229,16 @@ def design_missing_primers_beam(
 
         ranked = sorted(
             candidates.values(),
-            key=lambda state: design_state_score(sequence_length, state, target_coverage),
+            key=lambda state: design_state_score(sequence_length, state, target_depth),
         )
         states = {state_key(state): state for state in ranked[:beam_width]}
 
         current_best = ranked[0]
-        current_score = design_state_score(sequence_length, current_best, target_coverage)
+        current_score = design_state_score(sequence_length, current_best, target_depth)
         if current_score < best_score:
             best_state = current_best
             best_score = current_score
-        if min(compute_coverage(sequence_length, current_best)) >= target_coverage:
+        if min(compute_depth(sequence_length, current_best)) >= target_depth:
             return list(current_best)
 
     return list(best_state)
@@ -251,22 +251,22 @@ def state_key(primers: Sequence[Primer]) -> tuple[tuple[str, str, int], ...]:
 def design_state_score(
     sequence_length: int,
     primers: Sequence[Primer],
-    target_coverage: int,
+    target_depth: int,
 ) -> tuple[int | float, ...]:
-    coverage = compute_coverage(sequence_length, primers)
-    missing_bases = sum(1 for value in coverage if value < target_coverage)
-    coverage_deficit = sum(max(0, target_coverage - value) for value in coverage)
+    depth = compute_depth(sequence_length, primers)
+    missing_bases = sum(1 for value in depth if value < target_depth)
+    depth_deficit = sum(max(0, target_depth - value) for value in depth)
     designed_count = sum(1 for primer in primers if primer.source == "designed")
     placement = placement_score(sequence_length, primers)
-    overage_squared = sum(max(0, value - target_coverage) ** 2 for value in coverage)
-    high_coverage_bases = sum(1 for value in coverage if value >= target_coverage + 2)
+    overage_squared = sum(max(0, value - target_depth) ** 2 for value in depth)
+    high_depth_bases = sum(1 for value in depth if value >= target_depth + 2)
     return (
         missing_bases,
-        coverage_deficit,
+        depth_deficit,
         designed_count,
         placement["same_direction_adjacent"],
         overage_squared,
-        high_coverage_bases,
+        high_depth_bases,
         placement["max_adjacent_gap"],
         placement["fr_gap_variance"],
         len(primers),
@@ -276,20 +276,20 @@ def design_state_score(
 def generate_design_options(
     sequence: str,
     selected: Sequence[Primer],
-    coverage: Sequence[int],
-    target_coverage: int,
+    depth: Sequence[int],
+    target_depth: int,
     masks: Sequence[Interval],
     primer_name_prefix: str,
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> list[tuple[Primer, ...]]:
     sequence_length = len(sequence)
-    anchors = positions_below_coverage(coverage, target_coverage)
+    anchors = positions_below_depth(depth, target_depth)
     if not anchors:
         return []
 
     options: list[tuple[Primer, ...]] = []
     seen: set[tuple[tuple[str, int], ...]] = set()
-    min_coverage = min(coverage)
+    min_depth = min(depth)
     regions = positions_to_intervals(anchors, sequence_length)[:DESIGN_REGIONS_PER_STATE]
     for region in regions:
         region_options = design_options_for_anchor(
@@ -299,7 +299,7 @@ def generate_design_options(
             masks,
             primer_name_prefix,
             settings,
-            prefer_single=min_coverage > 0,
+            prefer_single=min_depth > 0,
         )
         for option in region_options:
             key = tuple((primer.direction, primer.position) for primer in option)
@@ -523,7 +523,7 @@ def hit_to_primer(
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> Primer:
     direction, binding, position = hit
-    cover = coverage_interval(position, direction, len(sequence), settings)
+    cover = depth_interval(position, direction, len(sequence), settings)
     return Primer(
         name=primer.name,
         sequence=primer.sequence,
@@ -540,11 +540,11 @@ def hit_to_primer(
 def select_existing_primers(
     sequence: str,
     primer_inputs: Sequence[PrimerInput],
-    target_coverage: int,
+    target_depth: int,
     masks: Sequence[Interval],
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> list[Primer]:
-    del target_coverage
+    del target_depth
     selected: list[Primer] = []
     seen_bindings: set[tuple[str, int, int]] = set()
     for primer_input in primer_inputs:
@@ -561,17 +561,17 @@ def select_existing_primers(
 def design_next_primers(
     sequence: str,
     selected: Sequence[Primer],
-    coverage: Sequence[int],
-    target_coverage: int,
+    depth: Sequence[int],
+    target_depth: int,
     masks: Sequence[Interval],
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> tuple[Primer, ...]:
     n = len(sequence)
-    anchors = positions_below_coverage(coverage, target_coverage)
+    anchors = positions_below_depth(depth, target_depth)
     if not anchors:
         return ()
     regions = positions_to_intervals(anchors, n)
-    if min(coverage) > 0:
+    if min(depth) > 0:
         for region in regions:
             single = design_single_covering_anchor(sequence, region.start, selected, masks, settings)
             if single:
@@ -867,7 +867,7 @@ def design_candidate(
         expected = (direction, binding.start, binding.end)
         if len(hits) != 1 or (hits[0][0], hits[0][1].start, hits[0][1].end) != expected:
             continue
-        cover = coverage_interval(position, direction, n, settings)
+        cover = depth_interval(position, direction, n, settings)
         primer = Primer(
             name=f"{normalize_primer_name_prefix(name_prefix)}_{'F' if direction == 'Forward' else 'R'}_{position}",
             sequence=primer_sequence.lower(),
@@ -907,22 +907,22 @@ def _calc_tm_cached(sequence: str) -> float:
     return float(primer3.bindings.calc_tm(sequence))
 
 
-def optimize_primers(sequence: str, primers: Sequence[Primer], target_coverage: int) -> list[Primer]:
+def optimize_primers(sequence: str, primers: Sequence[Primer], target_depth: int) -> list[Primer]:
     selected = list(primers)
     n = len(sequence)
-    selected = remove_redundant_primers_by_source(n, selected, target_coverage, "designed")
+    selected = remove_redundant_primers_by_source(n, selected, target_depth, "designed")
 
     existing = [primer for primer in selected if primer.source == "existing"]
     fixed = [primer for primer in selected if primer.source != "existing"]
     if existing:
-        selected = optimize_existing_primer_layout(n, existing, fixed, target_coverage)
+        selected = optimize_existing_primer_layout(n, existing, fixed, target_depth)
     return selected
 
 
 def remove_redundant_primers_by_source(
     sequence_length: int,
     primers: Sequence[Primer],
-    target_coverage: int,
+    target_depth: int,
     source: str,
 ) -> list[Primer]:
     selected = list(primers)
@@ -933,7 +933,7 @@ def remove_redundant_primers_by_source(
             if primer.source != source:
                 continue
             trial = [p for p in selected if p is not primer]
-            if min(compute_coverage(sequence_length, trial)) >= target_coverage:
+            if min(compute_depth(sequence_length, trial)) >= target_depth:
                 selected = trial
                 changed = True
                 break
@@ -944,13 +944,13 @@ def optimize_existing_primer_layout(
     sequence_length: int,
     existing: Sequence[Primer],
     fixed: Sequence[Primer],
-    target_coverage: int,
+    target_depth: int,
     beam_width: int = 512,
 ) -> list[Primer]:
-    if min(compute_coverage(sequence_length, [*fixed, *existing])) < target_coverage:
+    if min(compute_depth(sequence_length, [*fixed, *existing])) < target_depth:
         return [*fixed, *existing]
 
-    scorer = ExistingLayoutScorer(sequence_length, existing, fixed, target_coverage)
+    scorer = ExistingLayoutScorer(sequence_length, existing, fixed, target_depth)
     initial_state = tuple(range(len(existing)))
     best_state = initial_state
     best_score = scorer.score(initial_state)
@@ -984,48 +984,48 @@ class ExistingLayoutScorer:
         sequence_length: int,
         existing: Sequence[Primer],
         fixed: Sequence[Primer],
-        target_coverage: int,
+        target_depth: int,
     ) -> None:
         self.sequence_length = sequence_length
         self.existing = tuple(existing)
         self.fixed = tuple(fixed)
-        self.target_coverage = target_coverage
-        self.segments = coverage_segments(sequence_length, [*self.fixed, *self.existing])
+        self.target_depth = target_depth
+        self.segments = depth_segments(sequence_length, [*self.fixed, *self.existing])
         self.segment_lengths = tuple(end - start + 1 for start, end in self.segments)
-        self.fixed_coverage = self._coverage_vector(self.fixed)
-        self.existing_coverage = tuple(self._coverage_vector((primer,)) for primer in self.existing)
+        self.fixed_depth = self._depth_vector(self.fixed)
+        self.existing_depth = tuple(self._depth_vector((primer,)) for primer in self.existing)
         self._cache: dict[tuple[int, ...], tuple[int | float, ...] | None] = {}
 
     def score(self, state: tuple[int, ...]) -> tuple[int | float, ...] | None:
         if state in self._cache:
             return self._cache[state]
 
-        coverage = list(self.fixed_coverage)
+        depth = list(self.fixed_depth)
         for index in state:
-            primer_coverage = self.existing_coverage[index]
-            for segment_index, value in enumerate(primer_coverage):
-                coverage[segment_index] += value
+            primer_depth = self.existing_depth[index]
+            for segment_index, value in enumerate(primer_depth):
+                depth[segment_index] += value
 
-        if any(value < self.target_coverage for value in coverage):
+        if any(value < self.target_depth for value in depth):
             self._cache[state] = None
             return None
 
         primers = [*self.fixed, *(self.existing[index] for index in state)]
         placement = placement_score(self.sequence_length, primers)
         overage_squared = sum(
-            self.segment_lengths[index] * (value - self.target_coverage) ** 2
-            for index, value in enumerate(coverage)
+            self.segment_lengths[index] * (value - self.target_depth) ** 2
+            for index, value in enumerate(depth)
         )
-        high_coverage_bases = sum(
+        high_depth_bases = sum(
             self.segment_lengths[index]
-            for index, value in enumerate(coverage)
-            if value >= self.target_coverage + 2
+            for index, value in enumerate(depth)
+            if value >= self.target_depth + 2
         )
         order_sum = sum(primer.order for primer in primers)
         score = (
             placement["same_direction_adjacent"],
             overage_squared,
-            high_coverage_bases,
+            high_depth_bases,
             placement["max_adjacent_gap"],
             len(primers),
             placement["fr_gap_variance"],
@@ -1034,16 +1034,16 @@ class ExistingLayoutScorer:
         self._cache[state] = score
         return score
 
-    def _coverage_vector(self, primers: Sequence[Primer]) -> list[int]:
-        coverage = [0] * len(self.segments)
+    def _depth_vector(self, primers: Sequence[Primer]) -> list[int]:
+        depth = [0] * len(self.segments)
         for primer in primers:
             for index, (start, end) in enumerate(self.segments):
                 if intervals_overlap(primer.cover, Interval(start, end), self.sequence_length):
-                    coverage[index] += 1
-        return coverage
+                    depth[index] += 1
+        return depth
 
 
-def coverage_segments(sequence_length: int, primers: Sequence[Primer]) -> tuple[tuple[int, int], ...]:
+def depth_segments(sequence_length: int, primers: Sequence[Primer]) -> tuple[tuple[int, int], ...]:
     breakpoints = {1, sequence_length + 1}
     for primer in primers:
         for start, end in interval_segments(primer.cover, sequence_length):
@@ -1087,35 +1087,35 @@ def placement_score(sequence_length: int, primers: Sequence[Primer]) -> dict[str
     }
 
 
-def compute_coverage(sequence_length: int, primers: Sequence[Primer]) -> list[int]:
-    coverage = [0] * sequence_length
+def compute_depth(sequence_length: int, primers: Sequence[Primer]) -> list[int]:
+    depth = [0] * sequence_length
     for primer in primers:
-        add_coverage(coverage, primer.cover, 1)
-    return coverage
+        add_depth(depth, primer.cover, 1)
+    return depth
 
 
-def add_coverage(coverage: list[int], interval: Interval, value: int) -> None:
-    for pos in interval_positions(interval, len(coverage)):
-        coverage[pos - 1] += value
+def add_depth(depth: list[int], interval: Interval, value: int) -> None:
+    for pos in interval_positions(interval, len(depth)):
+        depth[pos - 1] += value
 
 
-def coverage_gain(coverage: Sequence[int], primer: Primer, target_coverage: int, sequence_length: int) -> int:
-    return sum(1 for pos in interval_positions(primer.cover, sequence_length) if coverage[pos - 1] < target_coverage)
+def depth_gain(depth: Sequence[int], primer: Primer, target_depth: int, sequence_length: int) -> int:
+    return sum(1 for pos in interval_positions(primer.cover, sequence_length) if depth[pos - 1] < target_depth)
 
 
-def low_coverage_gain(coverage: Sequence[int], primer: Primer, sequence_length: int) -> int:
-    min_cov = min(coverage) if coverage else 0
-    return sum(1 for pos in interval_positions(primer.cover, sequence_length) if coverage[pos - 1] == min_cov)
+def low_depth_gain(depth: Sequence[int], primer: Primer, sequence_length: int) -> int:
+    min_depth = min(depth) if depth else 0
+    return sum(1 for pos in interval_positions(primer.cover, sequence_length) if depth[pos - 1] == min_depth)
 
 
-def coverage_regions_below(coverage: Sequence[int], target_coverage: int) -> list[Interval]:
-    positions = [index + 1 for index, value in enumerate(coverage) if value < target_coverage]
-    return positions_to_intervals(positions, len(coverage))
+def depth_regions_below(depth: Sequence[int], target_depth: int) -> list[Interval]:
+    positions = [index + 1 for index, value in enumerate(depth) if value < target_depth]
+    return positions_to_intervals(positions, len(depth))
 
 
-def positions_below_coverage(coverage: Sequence[int], target_coverage: int) -> list[int]:
-    min_cov = min(coverage)
-    return [index + 1 for index, value in enumerate(coverage) if value == min_cov and value < target_coverage]
+def positions_below_depth(depth: Sequence[int], target_depth: int) -> list[int]:
+    min_depth = min(depth)
+    return [index + 1 for index, value in enumerate(depth) if value == min_depth and value < target_depth]
 
 
 def positions_to_intervals(positions: Sequence[int], sequence_length: int) -> list[Interval]:
@@ -1135,7 +1135,7 @@ def positions_to_intervals(positions: Sequence[int], sequence_length: int) -> li
     return intervals
 
 
-def coverage_interval(
+def depth_interval(
     position: int,
     direction: str,
     sequence_length: int,
@@ -1276,3 +1276,4 @@ def delimiter_from_name(name: str) -> str:
     if name == "comma":
         return ","
     raise ValueError(f"unsupported delimiter: {name}")
+

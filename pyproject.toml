@@ -1,7 +1,7 @@
 [project]
 name = "sanger-designer"
 version = "0.1.0"
-description = "CLI primer designer for circular plasmid Sanger sequencing coverage."
+description = "CLI primer designer for circular plasmid Sanger sequencing depth."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,3 +25,4 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+

@@ -67,9 +67,9 @@ def build_support_bundle(
         bundle.writestr("intermediate/masks.txt", "\n".join(format_interval(mask) for mask in masks) + ("\n" if masks else ""))
 
         bundle.writestr("results/sanger_primers.txt", format_primer_list(result.primers, delimiter))
-        bundle.writestr("results/coverage_report.txt", coverage_report_text(result, sequence_length, settings))
+        bundle.writestr("results/depth_report.txt", depth_report_text(result, sequence_length, settings))
         bundle.writestr("results/primer_table.csv", primer_table_csv(result.primers))
-        bundle.writestr("results/coverage_by_position.csv", coverage_by_position_csv(result.coverage))
+        bundle.writestr("results/depth_by_position.csv", depth_by_position_csv(result.depth))
 
         bundle.writestr("logs/run_log.txt", run_log)
         bundle.writestr("logs/warnings.txt", "\n".join(warnings) + ("\n" if warnings else ""))
@@ -94,9 +94,9 @@ def build_manifest(
         "mode": "GUI",
         "python_version": sys.version,
         "sequence_length": sequence_length,
-        "target_coverage": result.target_coverage,
+        "target_depth": result.target_depth,
         "achieved": result.achieved,
-        "min_coverage": result.min_coverage,
+        "min_depth": result.min_depth,
         "total_primers": len(result.primers),
         "existing_primers": sum(1 for primer in result.primers if primer.source == "existing"),
         "designed_primers": sum(1 for primer in result.primers if primer.source == "designed"),
@@ -111,7 +111,7 @@ def build_settings_payload(
 ) -> dict[str, Any]:
     return {
         "run_parameters": {
-            "target_coverage": run_parameters.get("coverage"),
+            "target_depth": run_parameters.get("depth"),
             "mask_text": run_parameters.get("mask_text"),
             "primer_name_prefix": run_parameters.get("prefix"),
             "delimiter": run_parameters.get("delimiter"),
@@ -163,7 +163,7 @@ def build_run_log(
         f"Duplicate primer sequences skipped: {duplicate_count}",
         f"Masks: {', '.join(format_interval(mask) for mask in masks) if masks else 'none'}",
         f"Achieved: {result.achieved}",
-        f"Minimum coverage: {result.min_coverage} / {result.target_coverage}",
+        f"Minimum depth: {result.min_depth} / {result.target_depth}",
         f"Total output primers: {len(result.primers)}",
         f"Existing output primers: {sum(1 for primer in result.primers if primer.source == 'existing')}",
         f"Designed output primers: {sum(1 for primer in result.primers if primer.source == 'designed')}",
@@ -201,9 +201,9 @@ def primer_table_csv(primers: Sequence[Primer]) -> str:
     return rows_to_csv(rows, ["name", "sequence", "direction", "position", "binding", "cover", "source"])
 
 
-def coverage_by_position_csv(coverage: Sequence[int]) -> str:
-    rows = [{"position": position, "coverage": value} for position, value in enumerate(coverage, start=1)]
-    return rows_to_csv(rows, ["position", "coverage"])
+def depth_by_position_csv(depth: Sequence[int]) -> str:
+    rows = [{"position": position, "depth": value} for position, value in enumerate(depth, start=1)]
+    return rows_to_csv(rows, ["position", "depth"])
 
 
 def rows_to_csv(rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) -> str:
@@ -214,15 +214,15 @@ def rows_to_csv(rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) ->
     return output.getvalue()
 
 
-def coverage_report_text(
+def depth_report_text(
     result: DesignResult,
     sequence_length: int,
     settings: DesignSettings,
 ) -> str:
     lines = [
         f"Status: {'achieved' if result.achieved else 'incomplete'}",
-        f"Target coverage: {result.target_coverage}",
-        f"Minimum coverage: {result.min_coverage}",
+        f"Target depth: {result.target_depth}",
+        f"Minimum depth: {result.min_depth}",
         f"Total primers: {len(result.primers)}",
         f"Existing primers: {sum(1 for primer in result.primers if primer.source == 'existing')}",
         f"Designed primers: {sum(1 for primer in result.primers if primer.source == 'designed')}",
@@ -248,3 +248,4 @@ def write_json(bundle: zipfile.ZipFile, path: str, payload: Mapping[str, Any]) -
 def safe_filename(name: str, fallback: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
     return cleaned or fallback
+
