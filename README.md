@@ -207,3 +207,9 @@ uv run streamlit run src/sanger_designer/gui.py
 - ユニーク性判定は完全一致ベースです。
 - 曖昧塩基は想定していません。
 
+## License
+
+This project is licensed under the GNU General Public License v2.0 only. See `LICENSE`.
+
+This project depends on third-party packages including primer3-py, Streamlit, and Plotly. Third-party packages are distributed under their respective licenses.
+
