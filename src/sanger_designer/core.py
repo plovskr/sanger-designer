@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from functools import lru_cache
+import io
 from pathlib import Path
 import re
 from statistics import median
@@ -424,17 +426,47 @@ def parse_primer_list(path: str | Path) -> list[PrimerInput]:
 
 def parse_primer_list_text(text: str) -> list[PrimerInput]:
     primers: list[PrimerInput] = []
-    for index, raw in enumerate(text.splitlines()):
-        line = raw.strip()
-        if not line or line.startswith("#"):
+    for delimiter in ("\t", ";", ","):
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        fields = next(
+            (
+                row for row in reader
+                if row and any(field.strip() for field in row) and not row[0].lstrip().startswith("#")
+            ),
+            None,
+        )
+        if fields is None:
+            return []
+        if len(fields) not in (2, 3):
             continue
-        delimiter = "\t" if "\t" in line else ";" if ";" in line else ","
-        fields = [field.strip() for field in line.split(delimiter)]
-        if len(fields) < 2:
-            raise ValueError(f"invalid primer row: {raw}")
-        name, sequence = fields[0], normalize_sequence(fields[1])
-        memo = fields[2] if len(fields) > 2 else ""
-        primers.append(PrimerInput(name=name, sequence=sequence, memo=memo, order=index))
+        sequence = re.sub(r"[\s\d]", "", fields[1].upper())
+        if not DNA_RE.fullmatch(sequence):
+            continue
+        primers.append(
+            PrimerInput(
+                name=fields[0].strip(),
+                sequence=sequence,
+                memo=fields[2].strip() if len(fields) == 3 else "",
+                order=reader.line_num - 1,
+            )
+        )
+        break
+    else:
+        raise ValueError("invalid primer row: expected a name and DNA sequence separated by tab, comma, or semicolon")
+
+    for fields in reader:
+        if not fields or not any(field.strip() for field in fields) or fields[0].lstrip().startswith("#"):
+            continue
+        if len(fields) not in (2, 3):
+            raise ValueError(f"invalid primer row {reader.line_num}: expected two or three columns")
+        primers.append(
+            PrimerInput(
+                name=fields[0].strip(),
+                sequence=normalize_sequence(fields[1]),
+                memo=fields[2].strip() if len(fields) == 3 else "",
+                order=reader.line_num - 1,
+            )
+        )
     return primers
 
 
@@ -1141,6 +1173,8 @@ def depth_interval(
     sequence_length: int,
     settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> Interval:
+    if settings.effective_read_length >= sequence_length:
+        return Interval(1, sequence_length)
     if direction == "Forward":
         return Interval(
             wrap(position + settings.noise_length, sequence_length),
@@ -1264,8 +1298,23 @@ def write_primer_list(path: str | Path, primers: Iterable[Primer], delimiter: st
 
 
 def format_primer_list(primers: Iterable[Primer], delimiter: str = "\t") -> str:
-    lines = [delimiter.join([primer.name, primer.sequence, primer.output_memo]) for primer in primers]
-    return "\n".join(lines) + ("\n" if lines else "")
+    return format_primer_rows(
+        ((primer.name, primer.sequence, primer.output_memo) for primer in primers),
+        delimiter,
+    )
+
+
+def format_primer_rows(rows: Iterable[tuple[str, str, str]], delimiter: str = "\t") -> str:
+    output = io.StringIO()
+    memo_writer = csv.writer(output, delimiter=delimiter, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    for name, sequence, memo in rows:
+        fields = io.StringIO()
+        csv.writer(fields, delimiter=delimiter, lineterminator="\n").writerow([name, sequence])
+        # Quote the memo even when it does not contain the selected delimiter.
+        output.write(fields.getvalue().removesuffix("\n"))
+        output.write(delimiter)
+        memo_writer.writerow([memo])
+    return output.getvalue()
 
 
 def delimiter_from_name(name: str) -> str:

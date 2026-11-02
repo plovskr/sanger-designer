@@ -222,7 +222,12 @@ src/sanger_designer/default_primers.txt
 *.txt
 *.gb
 
-# Local planning docs and tests
+# Local planning docs
 *.md
 !README.md
-tests/
+
+# Shared regression tests
+/tests/*
+!/tests/test_gui_state.py
+!/tests/test_circular_coverage.py
+!/tests/test_primer_formats.py

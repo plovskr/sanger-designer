@@ -25,6 +25,10 @@ requires = ["uv_build>=0.11.0,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = [
+    "tests/test_gui_state.py",
+    "tests/test_circular_coverage.py",
+    "tests/test_primer_formats.py",
+]
 pythonpath = ["src"]
 

@@ -55,7 +55,7 @@ GUIの `Existing primer lists` に、既存プライマーリストをアップ�
 src/sanger_designer/default_primers.txt
 ```
 
-このファイルはユーザーが編集するローカル設定ファイルです。Git管理には含めません。存在しない場合、GUIは警告を表示し、既存プライマーなしで処理を続行します。
+このファイルはユーザーが編集するローカル設定ファイルです。Git管理には含めません。存在しない場合、GUIは警告を表示し、標準リストを使わずに処理を続行します。
 
 標準リストとアップロードリストを併用した場合、同じ配列のプライマーが複数存在すると標準リスト側の名前を優先します。アップロードリスト同士では、先に読み込まれたリストの名前を優先します。
 
@@ -71,11 +71,21 @@ primer_name;sequence;memo
 
 `memo` は省略できます。
 
+ファイル内の区切り文字は統一してください。各データ行は2列（名前、配列）または3列（名前、配列、メモ）です。
+
+メモに区切り文字や改行を含める場合は、CSV形式のダブルクォートで囲みます。メモ内のダブルクォートは2つ重ねて表します。
+
 例:
 
 ```text
 MyPrimer_F	ACGTACGTACGTACGTACGT	optional memo
 MyPrimer_R	TGCATGCATGCATGCATGCA
+```
+
+カンマや引用符を含むメモの例:
+
+```text
+MyPrimer_F,ACGTACGTACGTACGTACGT,"optional memo, with ""quotes"""
 ```
 
 ## 基本的な使い方
@@ -87,6 +97,10 @@ MyPrimer_R	TGCATGCATGCATGCATGCA
 5. プライマーを置きたくない領域がある場合は `Mask regions` に入力します。
 6. 新規プライマー名のprefixを変える場合は `New primer prefix` を変更します。
 7. `Design primers` を押します。
+
+`Target depth` は必須で、`2`、`3`、`4` のいずれかを選択します。
+
+入力ファイルや設計条件を変更すると、前の結果とダウンロードは初期化されます。新しい条件の結果を得るには、`Design primers` をもう一度押してください。
 
 ## マスク指定
 
@@ -118,6 +132,8 @@ MyPrimer_R	TGCATGCATGCATGCATGCA
 - GC min/max
 
 通常はデフォルト値のままで使えます。
+
+有効なリード長（`Read length - Noisy bases from primer`）がプラスミド全長以上の場合、そのリードは全周をカバーしたものとして扱います。複数周にわたる長さでも、1本のプライマーによるdepthへの寄与は各位置で1です。
 
 ## 結果の見方
 
@@ -171,7 +187,9 @@ Bundleにはプラスミド配列やプライマー配列が入ります。共�
 
 - プライマー名
 - 配列
-- メモ欄: position、direction、binding、cover
+- メモ欄: 入力メモ（指定時）、position、direction、binding、cover
+
+出力のメモ欄は常にダブルクォートで囲みます。メモ内の区切り文字・改行・引用符を保持するため、読み戻す際もCSV形式の引用符に対応した処理を使ってください。
 
 最終出力には、Tm値、GC含有率、既存/新規の区別は含めません。
 
@@ -206,6 +224,14 @@ uv run streamlit run src/sanger_designer/gui.py
 - GenBank feature注釈は使いません。
 - ユニーク性判定は完全一致ベースです。
 - 曖昧塩基は想定していません。
+
+## テスト
+
+```bash
+uv run --locked pytest
+```
+
+入力変更時の結果初期化、環状配列のdepth、プライマーメモの入出力を検証します。テストは合成配列を使い、標準プライマー一覧がない環境でも実行できます。
 
 ## License
 
