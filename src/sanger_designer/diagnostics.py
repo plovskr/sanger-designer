@@ -12,7 +12,17 @@ import zipfile
 from typing import Any, Mapping, Sequence
 
 from . import defaults
-from .core import DesignResult, DesignSettings, Interval, Primer, PrimerInput, format_interval, format_primer_list
+from .core import (
+    DesignResult,
+    DesignSettings,
+    Interval,
+    Primer,
+    PrimerInput,
+    format_interval,
+    format_primer_list,
+    format_primer_rows,
+    parse_primer_list_text,
+)
 
 
 SENSITIVE_BUNDLE_NOTICE = "Bundleにはプラスミド配列やプライマー配列が入ります。共有前に内容を確認してください。"
@@ -177,12 +187,11 @@ def build_run_log(
 
 
 def count_primer_rows(text: str) -> int:
-    return sum(1 for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#"))
+    return len(parse_primer_list_text(text))
 
 
 def format_primer_list_from_inputs(primers: Sequence[PrimerInput], delimiter: str) -> str:
-    rows = [delimiter.join([primer.name, primer.sequence, primer.memo]) for primer in primers]
-    return "\n".join(rows) + ("\n" if rows else "")
+    return format_primer_rows(((primer.name, primer.sequence, primer.memo) for primer in primers), delimiter)
 
 
 def primer_table_csv(primers: Sequence[Primer]) -> str:

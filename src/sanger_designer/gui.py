@@ -40,6 +40,7 @@ from sanger_designer.core import (
     parse_masks,
     parse_primer_list_text,
     read_sequence_text,
+    wrap,
 )
 from sanger_designer.diagnostics import (
     SENSITIVE_BUNDLE_NOTICE,
@@ -68,14 +69,43 @@ def main() -> None:
     render_result(result, st.session_state["sequence_length"], st.session_state["masks"], params["delimiter"])
 
 
+def reset_design_result() -> None:
+    for key in (
+        "result",
+        "sequence_length",
+        "masks",
+        "settings",
+        "runtime_seconds",
+        "run_parameters",
+        "sequence_file_name",
+        "sequence_text",
+        "uploaded_primer_files",
+        "default_primer_text",
+        "merged_primers",
+        "warnings",
+    ):
+        st.session_state.pop(key, None)
+    st.session_state["run_requested"] = False
+
+
 def render_sidebar() -> dict:
     with st.sidebar:
         st.header("Input")
-        sequence_file = st.file_uploader("Plasmid sequence", type=["gb", "gbk", "fa", "fasta", "txt"])
-        primer_files = st.file_uploader("Existing primer lists", type=["txt"], accept_multiple_files=True)
+        sequence_file = st.file_uploader(
+            "Plasmid sequence",
+            type=["gb", "gbk", "fa", "fasta", "txt"],
+            on_change=reset_design_result,
+        )
+        primer_files = st.file_uploader(
+            "Existing primer lists",
+            type=["txt"],
+            accept_multiple_files=True,
+            on_change=reset_design_result,
+        )
         use_default_primers = st.checkbox(
             f"Use {DEFAULT_PRIMER_LIST_NAME}",
             value=DEFAULT_USE_DEFAULT_PRIMER_LIST,
+            on_change=reset_design_result,
         )
 
         st.header("Options")
@@ -83,17 +113,25 @@ def render_sidebar() -> dict:
             "Target depth",
             options=list(TARGET_DEPTH_OPTIONS),
             default=DEFAULT_TARGET_DEPTH,
+            required=True,
+            on_change=reset_design_result,
         )
         mask_text = st.text_input(
             "Mask regions",
             value=DEFAULT_MASK_TEXT,
             placeholder=MASK_TEXT_PLACEHOLDER,
+            on_change=reset_design_result,
         )
-        prefix = st.text_input("New primer prefix", value=DEFAULT_PRIMER_NAME_PREFIX)
+        prefix = st.text_input(
+            "New primer prefix",
+            value=DEFAULT_PRIMER_NAME_PREFIX,
+            on_change=reset_design_result,
+        )
         delimiter_name = st.selectbox(
             "Output delimiter",
             options=list(DELIMITER_OPTIONS),
             index=DELIMITER_OPTIONS.index(DEFAULT_DELIMITER_NAME),
+            on_change=reset_design_result,
         )
         max_iterations = st.number_input(
             "Max iterations",
@@ -101,6 +139,7 @@ def render_sidebar() -> dict:
             max_value=MAX_ITERATIONS_INPUT_MAX,
             value=DEFAULT_MAX_ITERATIONS,
             step=MAX_ITERATIONS_INPUT_STEP,
+            on_change=reset_design_result,
         )
         settings = render_advanced_settings()
 
@@ -137,6 +176,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=2000,
             value=defaults.read_length,
             step=50,
+            on_change=reset_design_result,
         )
         noise_length = st.number_input(
             "Noisy bases from primer",
@@ -144,6 +184,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=1000,
             value=defaults.noise_length,
             step=10,
+            on_change=reset_design_result,
         )
         min_gap = st.number_input(
             "Minimum binding gap",
@@ -151,6 +192,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=1000,
             value=defaults.min_binding_gap,
             step=10,
+            on_change=reset_design_result,
         )
 
         pair_cols = st.columns(2)
@@ -160,6 +202,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=2000,
             value=defaults.preferred_pair_min,
             step=10,
+            on_change=reset_design_result,
         )
         preferred_pair_max = pair_cols[1].number_input(
             "Preferred pair max",
@@ -167,6 +210,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=2000,
             value=defaults.preferred_pair_max,
             step=10,
+            on_change=reset_design_result,
         )
 
         length_cols = st.columns(2)
@@ -176,6 +220,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=100,
             value=defaults.min_primer_len,
             step=1,
+            on_change=reset_design_result,
         )
         max_primer_len = length_cols[1].number_input(
             "Primer length max",
@@ -183,11 +228,22 @@ def render_advanced_settings() -> DesignSettings:
             max_value=100,
             value=defaults.max_primer_len,
             step=1,
+            on_change=reset_design_result,
         )
 
         tm_cols = st.columns(2)
-        min_tm = tm_cols[0].number_input("Tm min", value=defaults.min_tm, step=0.5)
-        max_tm = tm_cols[1].number_input("Tm max", value=defaults.max_tm, step=0.5)
+        min_tm = tm_cols[0].number_input(
+            "Tm min",
+            value=defaults.min_tm,
+            step=0.5,
+            on_change=reset_design_result,
+        )
+        max_tm = tm_cols[1].number_input(
+            "Tm max",
+            value=defaults.max_tm,
+            step=0.5,
+            on_change=reset_design_result,
+        )
 
         gc_cols = st.columns(2)
         min_gc = gc_cols[0].number_input(
@@ -196,6 +252,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=100.0,
             value=defaults.min_gc,
             step=1.0,
+            on_change=reset_design_result,
         )
         max_gc = gc_cols[1].number_input(
             "GC max (%)",
@@ -203,6 +260,7 @@ def render_advanced_settings() -> DesignSettings:
             max_value=100.0,
             value=defaults.max_gc,
             step=1.0,
+            on_change=reset_design_result,
         )
 
     return DesignSettings(
@@ -233,7 +291,7 @@ def render_empty_state() -> None:
 
 
 def run_design(params: dict) -> None:
-    st.session_state["run_requested"] = False
+    reset_design_result()
     start = time.perf_counter()
     try:
         sequence_text = decode_upload(params["sequence_file"])
@@ -313,7 +371,7 @@ def render_result(result: DesignResult, sequence_length: int, masks, delimiter: 
     with placement_tab:
         show_read_ranges = st.checkbox("Show cover bars", value=True)
         st.plotly_chart(
-            build_primer_placement_figure(result, sequence_length, masks, show_read_ranges),
+            build_primer_placement_figure(result, sequence_length, masks, show_read_ranges, settings),
             use_container_width=True,
         )
     with primers_tab:
@@ -436,6 +494,7 @@ def build_primer_placement_figure(
     sequence_length: int,
     masks,
     show_read_ranges: bool,
+    settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> go.Figure:
     fig = go.Figure()
     for mask in masks:
@@ -444,7 +503,7 @@ def build_primer_placement_figure(
         add_interval_shape(fig, region, sequence_length, "#ef4444", "Missing")
 
     for primer in sorted(result.primers, key=lambda item: item.position):
-        add_primer_shapes(fig, primer, sequence_length, show_read_ranges)
+        add_primer_shapes(fig, primer, sequence_length, show_read_ranges, settings)
 
     for source in ("existing", "designed"):
         for direction, lane, symbol in (("Forward", 2, "triangle-right"), ("Reverse", 1, "triangle-left")):
@@ -508,11 +567,12 @@ def add_primer_shapes(
     primer: Primer,
     sequence_length: int,
     show_read_ranges: bool,
+    settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> None:
     lane = 2 if primer.direction == "Forward" else 1
     color = primer_color(primer.source)
     if show_read_ranges:
-        add_noisy_connector(fig, primer, sequence_length, lane, color)
+        add_noisy_connector(fig, primer, sequence_length, lane, color, settings)
         for start, end in interval_segments(primer.cover, sequence_length):
             fig.add_shape(
                 type="line",
@@ -541,11 +601,16 @@ def add_noisy_connector(
     sequence_length: int,
     lane: int,
     color: str,
+    settings: DesignSettings = DEFAULT_DESIGN_SETTINGS,
 ) -> None:
-    if primer.direction == "Forward":
-        connector = Interval(primer.position, primer.cover.start)
+    if settings.noise_length == 0:
+        return
+    if settings.noise_length >= sequence_length:
+        connector = Interval(1, sequence_length)
+    elif primer.direction == "Forward":
+        connector = Interval(primer.position, wrap(primer.position + settings.noise_length, sequence_length))
     else:
-        connector = Interval(primer.cover.end, primer.position)
+        connector = Interval(wrap(primer.position - settings.noise_length, sequence_length), primer.position)
 
     for start, end in interval_segments(connector, sequence_length):
         fig.add_shape(
