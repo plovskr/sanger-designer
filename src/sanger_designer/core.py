@@ -883,16 +883,19 @@ def design_candidate(
     for length in range(settings.min_primer_len, settings.max_primer_len + 1):
         if direction == "Forward":
             binding = Interval(position, wrap(position + length - 1, n))
-            primer_sequence = circular_subsequence(sequence, position, length)
         else:
             start = wrap(position - length + 1, n)
             binding = Interval(start, position)
-            primer_sequence = reverse_complement(circular_subsequence(sequence, start, length))
 
+        # Longer candidates contain this binding and cannot remove a mask or spacing conflict.
         if interval_overlaps_any(binding, masks, n):
-            continue
+            return None
         if not binding_respects_spacing(binding, selected, n, settings):
-            continue
+            return None
+        if direction == "Forward":
+            primer_sequence = circular_subsequence(sequence, position, length)
+        else:
+            primer_sequence = reverse_complement(circular_subsequence(sequence, start, length))
         if not primer_quality_ok(primer_sequence, settings):
             continue
         hits = find_bindings(sequence, primer_sequence)
@@ -1205,13 +1208,17 @@ def binding_respects_spacing(
 
 
 def binding_gap(a: Interval, b: Interval, sequence_length: int) -> int:
-    best = sequence_length
-    for a_start, a_end in interval_segments(a, sequence_length):
-        for b_start, b_end in interval_segments(b, sequence_length):
-            best = min(best, segment_gap(a_start, a_end, b_start, b_end, sequence_length))
-            if best == 0:
-                return 0
-    return best
+    a_start = normalize_position(a.start, sequence_length)
+    a_end = normalize_position(a.end, sequence_length)
+    b_start = normalize_position(b.start, sequence_length)
+    b_end = normalize_position(b.end, sequence_length)
+    # At least one interval starts inside the other when circular intervals overlap.
+    if (
+        (b_start - a_start) % sequence_length <= (a_end - a_start) % sequence_length
+        or (a_start - b_start) % sequence_length <= (b_end - b_start) % sequence_length
+    ):
+        return 0
+    return min((b_start - a_end - 1) % sequence_length, (a_start - b_end - 1) % sequence_length)
 
 
 def segment_gap(a_start: int, a_end: int, b_start: int, b_end: int, sequence_length: int) -> int:

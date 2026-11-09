@@ -231,3 +231,4 @@ src/sanger_designer/default_primers.txt
 !/tests/test_gui_state.py
 !/tests/test_circular_coverage.py
 !/tests/test_primer_formats.py
+!/tests/test_design_performance.py
